@@ -27,6 +27,11 @@ import {
   FileWarning,
   FileText,
   Search,
+  Video,
+  VideoOff,
+  MapPin,
+  ArrowRight,
+  Navigation,
 } from "lucide-react"
 import Image from "next/image"
 import { 
@@ -132,6 +137,14 @@ export default function VehicleUploadPage() {
   const [ocrStatus, setOcrStatus] = useState<string>("")
   const workerRef = useRef<Worker | null>(null)
 
+  // Webcam state
+  const [isCameraActive, setIsCameraActive] = useState(false)
+  const [capturedImage, setCapturedImage] = useState<string | null>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
   // Initialize Tesseract worker
   useEffect(() => {
     const initWorker = async () => {
@@ -159,6 +172,87 @@ export default function VehicleUploadPage() {
       }
     }
   }, [])
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+      }
+    }
+  }, [])
+
+  // Start camera function
+  const startCamera = async () => {
+    try {
+      setCameraError(null)
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+      }
+      setIsCameraActive(true)
+      setCapturedImage(null)
+    } catch (err) {
+      console.error("Camera access error:", err)
+      setCameraError("Unable to access camera. Please check permissions.")
+    }
+  }
+
+  // Stop camera function
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    setIsCameraActive(false)
+  }
+
+  // Capture image from camera
+  const captureImage = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current
+      const canvas = canvasRef.current
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext("2d")
+      if (ctx) {
+        ctx.drawImage(video, 0, 0)
+        const imageData = canvas.toDataURL("image/jpeg", 0.95)
+        setCapturedImage(imageData)
+        setUploadedImage(imageData)
+        
+        // Create a file from the captured image for processing
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], `capture-${Date.now()}.jpg`, { type: "image/jpeg" })
+            setSelectedFile(file)
+            setUploadSuccess(true)
+            setTimeout(() => setUploadSuccess(false), 2000)
+          }
+        }, "image/jpeg", 0.95)
+        
+        stopCamera()
+      }
+    }
+  }
+
+  // Retake photo
+  const retakePhoto = () => {
+    setCapturedImage(null)
+    setUploadedImage(null)
+    setSelectedFile(null)
+    setVehicleDetails(null)
+    setOcrResult(null)
+    setProcessingState("idle")
+    startCamera()
+  }
 
   // Extract vehicle plate from OCR text using regex patterns
   const extractVehiclePlate = (text: string): string | null => {
@@ -430,6 +524,9 @@ export default function VehicleUploadPage() {
     setOcrResult(null)
     setOcrProgress(0)
     setOcrStatus("")
+    setCapturedImage(null)
+    setCameraError(null)
+    stopCamera()
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
@@ -499,34 +596,117 @@ export default function VehicleUploadPage() {
               </p>
             </div>
 
-            {/* Camera Preview Placeholder */}
-            <div className="relative w-full max-w-sm lg:w-80">
-              <div className="group relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-900/80 p-1 shadow-2xl backdrop-blur-xl transition-all duration-500 hover:border-lime-500/30 hover:shadow-lime-500/10">
-                <div className="relative aspect-video overflow-hidden rounded-[1.25rem] bg-zinc-800">
-                  {/* Scan lines effect */}
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-lime-500/5 to-transparent opacity-50" />
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
-                    <div className="relative">
-                      <Camera className="h-12 w-12 text-zinc-600" />
-                      <div className="absolute -bottom-1 -right-1 h-3 w-3 animate-pulse rounded-full bg-lime-500" />
-                    </div>
-                    <span className="text-sm font-medium text-zinc-500">Live Camera Feed</span>
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-lime-500/30 bg-lime-500/10 px-3 py-1 text-xs font-medium text-lime-400">
-                      <span className="relative flex h-1.5 w-1.5">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-75" />
-                        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-lime-400" />
-                      </span>
-                      Live
-                    </span>
-                  </div>
-                  {/* Corner brackets */}
-                  <div className="absolute left-3 top-3 h-6 w-6 border-l-2 border-t-2 border-lime-500/50" />
-                  <div className="absolute right-3 top-3 h-6 w-6 border-r-2 border-t-2 border-lime-500/50" />
-                  <div className="absolute bottom-3 left-3 h-6 w-6 border-b-2 border-l-2 border-lime-500/50" />
-                  <div className="absolute bottom-3 right-3 h-6 w-6 border-b-2 border-r-2 border-lime-500/50" />
-                </div>
-              </div>
-            </div>
+{/* Live Camera Preview */}
+                            <div className="relative w-full max-w-sm lg:w-80">
+                              <div className="group relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-zinc-900/80 p-1 shadow-2xl backdrop-blur-xl transition-all duration-500 hover:border-lime-500/30 hover:shadow-lime-500/10">
+                                <div className="relative aspect-video overflow-hidden rounded-[1.25rem] bg-zinc-800">
+                                  {/* Hidden canvas for capture */}
+                                  <canvas ref={canvasRef} className="hidden" />
+                                  
+                                  {/* Video element for camera feed */}
+                                  {isCameraActive && (
+                                    <video
+                                      ref={videoRef}
+                                      autoPlay
+                                      playsInline
+                                      muted
+                                      className="absolute inset-0 h-full w-full object-cover"
+                                    />
+                                  )}
+                                  
+                                  {/* Captured image preview */}
+                                  {capturedImage && !isCameraActive && (
+                                    <img
+                                      src={capturedImage}
+                                      alt="Captured vehicle"
+                                      className="absolute inset-0 h-full w-full object-cover"
+                                    />
+                                  )}
+
+                                  {/* Scan lines effect */}
+                                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-lime-500/5 to-transparent opacity-50" />
+                                  
+                                  {/* Camera inactive state */}
+                                  {!isCameraActive && !capturedImage && (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                                      <div className="relative">
+                                        <Camera className="h-12 w-12 text-zinc-600" />
+                                        <div className="absolute -bottom-1 -right-1 h-3 w-3 animate-pulse rounded-full bg-zinc-500" />
+                                      </div>
+                                      <span className="text-sm font-medium text-zinc-500">Camera Inactive</span>
+                                      <button
+                                        onClick={startCamera}
+                                        className="inline-flex items-center gap-2 rounded-full border border-lime-500/30 bg-lime-500/10 px-4 py-2 text-xs font-medium text-lime-400 transition-all hover:bg-lime-500/20"
+                                      >
+                                        <Video className="h-3.5 w-3.5" />
+                                        Start Camera
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {/* Camera active state */}
+                                  {isCameraActive && (
+                                    <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-2">
+                                      <button
+                                        onClick={captureImage}
+                                        className="inline-flex items-center gap-2 rounded-full bg-lime-500 px-4 py-2 text-xs font-semibold text-zinc-900 shadow-lg shadow-lime-500/30 transition-all hover:bg-lime-400"
+                                      >
+                                        <Camera className="h-4 w-4" />
+                                        Capture
+                                      </button>
+                                      <button
+                                        onClick={stopCamera}
+                                        className="inline-flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 transition-all hover:bg-red-500/20"
+                                      >
+                                        <VideoOff className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {/* Captured image actions */}
+                                  {capturedImage && !isCameraActive && (
+                                    <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center">
+                                      <button
+                                        onClick={retakePhoto}
+                                        className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-zinc-900/80 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-zinc-800"
+                                      >
+                                        <Camera className="h-3.5 w-3.5" />
+                                        Retake
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {/* Live badge */}
+                                  {isCameraActive && (
+                                    <div className="absolute right-3 top-3">
+                                      <span className="inline-flex items-center gap-1.5 rounded-full border border-red-500/30 bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400">
+                                        <span className="relative flex h-1.5 w-1.5">
+                                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-red-400" />
+                                        </span>
+                                        REC
+                                      </span>
+                                    </div>
+                                  )}
+
+                                  {/* Corner brackets */}
+                                  <div className="absolute left-3 top-3 h-6 w-6 border-l-2 border-t-2 border-lime-500/50" />
+                                  <div className="absolute right-3 top-3 h-6 w-6 border-r-2 border-t-2 border-lime-500/50" />
+                                  <div className="absolute bottom-3 left-3 h-6 w-6 border-b-2 border-l-2 border-lime-500/50" />
+                                  <div className="absolute bottom-3 right-3 h-6 w-6 border-b-2 border-r-2 border-lime-500/50" />
+                                  
+                                  {/* Camera error message */}
+                                  {cameraError && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 p-4">
+                                      <div className="text-center">
+                                        <AlertTriangle className="mx-auto h-8 w-8 text-red-400" />
+                                        <p className="mt-2 text-sm text-red-400">{cameraError}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
           </div>
         </div>
 
@@ -929,6 +1109,41 @@ vehicleDetails?.status === "blacklisted"
                             <AlertTriangle className="h-5 w-5" />
                           )}
                           <span className="font-medium">{vehicleDetails.message}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Parking Guidance */}
+                    {vehicleDetails.status === "authorized" && vehicleDetails.slot && (
+                      <div className="mt-4 rounded-xl border border-sky-500/30 bg-sky-500/10 p-5">
+                        <div className="mb-3 flex items-center gap-2 text-sky-400">
+                          <Navigation className="h-5 w-5" />
+                          <span className="font-semibold">Parking Guidance</span>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-400">1</div>
+                            <p className="text-sm text-zinc-300">
+                              Proceed through <span className="font-medium text-white">Gate 1 - Main Entry</span>
+                            </p>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-400">2</div>
+                            <p className="text-sm text-zinc-300">
+                              Head towards <span className="font-medium text-white">Zone {vehicleDetails.zone || vehicleDetails.slot.charAt(0)}</span> - follow digital signage
+                            </p>
+                          </div>
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-xs font-bold text-sky-400">3</div>
+                            <p className="text-sm text-zinc-300">
+                              Park in slot <span className="inline-flex items-center gap-1 rounded bg-lime-500/20 px-2 py-0.5 font-mono font-bold text-lime-400">{vehicleDetails.slot}</span> - Look for green indicator light
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex items-center gap-2 rounded-lg bg-zinc-800/50 p-3">
+                          <MapPin className="h-4 w-4 text-lime-400" />
+                          <span className="text-xs text-zinc-400">Estimated walking distance:</span>
+                          <span className="text-xs font-semibold text-white">{Math.floor(Math.random() * 50 + 20)}m to entrance</span>
                         </div>
                       </div>
                     )}

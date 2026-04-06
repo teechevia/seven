@@ -8,6 +8,7 @@ import {
   Bell,
   BarChart3,
   LogOut,
+  ArrowRightCircle,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -22,7 +23,8 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard", href: "/" },
   { id: "parking", icon: ParkingCircle, label: "Parking Layout", href: "/parking-layout" },
-  { id: "vehicle", icon: Car, label: "Vehicle Upload", href: "/vehicle-upload" },
+  { id: "vehicle", icon: Car, label: "Vehicle Entry", href: "/vehicle-upload" },
+  { id: "exit", icon: ArrowRightCircle, label: "Vehicle Exit", href: "/vehicle-exit" },
   { id: "alerts", icon: Bell, label: "Alerts", href: "/alerts" },
   { id: "analytics", icon: BarChart3, label: "Analytics", href: "/analytics" },
 ]
