@@ -22,16 +22,46 @@ if (!MONGODB_URI) {
  */
 function cleanMongoDBUri(uri: string): string {
   try {
+    // First try URL-based cleaning
     const url = new URL(uri)
-    // Remove unsupported options
-    const unsupportedOptions = ['appname', 'appName']
+    // Remove unsupported options (case-insensitive)
+    const unsupportedOptions = ['appname', 'appName', ' appname', ' appName']
     unsupportedOptions.forEach(opt => {
-      url.searchParams.delete(opt)
+      url.searchParams.delete(opt.trim())
     })
-    return url.toString()
+    let cleanedUri = url.toString()
+    
+    // Also use regex to catch any edge cases with spaces or encoding issues
+    // Remove appname parameter with various formats
+    cleanedUri = cleanedUri.replace(/[?&]\s*appname=[^&]*/gi, match => {
+      // If it starts with ?, we need to handle the next param
+      return match.startsWith('?') ? '?' : ''
+    })
+    cleanedUri = cleanedUri.replace(/[?&]\s*appName=[^&]*/gi, match => {
+      return match.startsWith('?') ? '?' : ''
+    })
+    
+    // Clean up any double && or trailing ?
+    cleanedUri = cleanedUri.replace(/&&/g, '&')
+    cleanedUri = cleanedUri.replace(/\?&/g, '?')
+    cleanedUri = cleanedUri.replace(/\?$/, '')
+    cleanedUri = cleanedUri.replace(/&$/, '')
+    
+    return cleanedUri
   } catch {
-    // If URL parsing fails, return original
-    return uri
+    // If URL parsing fails, use regex fallback
+    let cleanedUri = uri
+    cleanedUri = cleanedUri.replace(/[?&]\s*appname=[^&]*/gi, match => {
+      return match.startsWith('?') ? '?' : ''
+    })
+    cleanedUri = cleanedUri.replace(/[?&]\s*appName=[^&]*/gi, match => {
+      return match.startsWith('?') ? '?' : ''
+    })
+    cleanedUri = cleanedUri.replace(/&&/g, '&')
+    cleanedUri = cleanedUri.replace(/\?&/g, '?')
+    cleanedUri = cleanedUri.replace(/\?$/, '')
+    cleanedUri = cleanedUri.replace(/&$/, '')
+    return cleanedUri
   }
 }
 
