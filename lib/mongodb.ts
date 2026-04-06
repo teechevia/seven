@@ -21,48 +21,44 @@ if (!MONGODB_URI) {
  * Some MongoDB connection strings include options that aren't supported by mongoose
  */
 function cleanMongoDBUri(uri: string): string {
+  // First decode any URL encoding to normalize the string
+  let cleanedUri = uri
   try {
-    // First try URL-based cleaning
-    const url = new URL(uri)
-    // Remove unsupported options (case-insensitive)
-    const unsupportedOptions = ['appname', 'appName', ' appname', ' appName']
-    unsupportedOptions.forEach(opt => {
-      url.searchParams.delete(opt.trim())
-    })
-    let cleanedUri = url.toString()
-    
-    // Also use regex to catch any edge cases with spaces or encoding issues
-    // Remove appname parameter with various formats
-    cleanedUri = cleanedUri.replace(/[?&]\s*appname=[^&]*/gi, match => {
-      // If it starts with ?, we need to handle the next param
-      return match.startsWith('?') ? '?' : ''
-    })
-    cleanedUri = cleanedUri.replace(/[?&]\s*appName=[^&]*/gi, match => {
-      return match.startsWith('?') ? '?' : ''
-    })
-    
-    // Clean up any double && or trailing ?
-    cleanedUri = cleanedUri.replace(/&&/g, '&')
-    cleanedUri = cleanedUri.replace(/\?&/g, '?')
-    cleanedUri = cleanedUri.replace(/\?$/, '')
-    cleanedUri = cleanedUri.replace(/&$/, '')
-    
-    return cleanedUri
+    cleanedUri = decodeURIComponent(uri)
   } catch {
-    // If URL parsing fails, use regex fallback
-    let cleanedUri = uri
-    cleanedUri = cleanedUri.replace(/[?&]\s*appname=[^&]*/gi, match => {
-      return match.startsWith('?') ? '?' : ''
-    })
-    cleanedUri = cleanedUri.replace(/[?&]\s*appName=[^&]*/gi, match => {
-      return match.startsWith('?') ? '?' : ''
-    })
-    cleanedUri = cleanedUri.replace(/&&/g, '&')
-    cleanedUri = cleanedUri.replace(/\?&/g, '?')
-    cleanedUri = cleanedUri.replace(/\?$/, '')
-    cleanedUri = cleanedUri.replace(/&$/, '')
-    return cleanedUri
+    // If decoding fails, use original
   }
+  
+  // Remove all variations of appname/appName parameter using regex
+  // This handles: appname, appName, %20appname, encoded spaces, etc.
+  cleanedUri = cleanedUri.replace(/[?&]\s*app[nN]ame=[^&]*/gi, (match, offset, string) => {
+    // Check if this is the first parameter (starts with ?)
+    const charBefore = offset > 0 ? string[offset] : ''
+    if (charBefore === '?') {
+      // Check if there are more parameters after
+      const afterMatch = string.substring(offset + match.length)
+      if (afterMatch.startsWith('&')) {
+        return '?'
+      }
+      return ''
+    }
+    return ''
+  })
+  
+  // Also try with URL-encoded space (%20)
+  cleanedUri = cleanedUri.replace(/[?&]%20*app[nN]ame=[^&]*/gi, (match) => {
+    return match.startsWith('?') ? '?' : ''
+  })
+  
+  // Clean up any double && or trailing ? or &
+  cleanedUri = cleanedUri.replace(/&&+/g, '&')
+  cleanedUri = cleanedUri.replace(/\?&/g, '?')
+  cleanedUri = cleanedUri.replace(/\?$/g, '')
+  cleanedUri = cleanedUri.replace(/&$/g, '')
+  
+  // Re-encode special characters if needed for MongoDB URI format
+  // But keep the basic structure intact
+  return cleanedUri
 }
 
 /**
