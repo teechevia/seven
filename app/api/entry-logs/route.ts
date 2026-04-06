@@ -1,65 +1,44 @@
 import { NextResponse } from "next/server"
-import connectDB from "@/lib/mongodb"
-import EntryLog from "@/lib/models/EntryLog"
+import { getEntryLogs } from "@/lib/fake-data"
 
 export async function GET(request: Request) {
-  try {
-    await connectDB()
+  // Simulate processing delay
+  await new Promise((resolve) => setTimeout(resolve, 50))
 
-    const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get("limit") || "50")
-    const status = searchParams.get("status")
+  const { searchParams } = new URL(request.url)
+  const limit = parseInt(searchParams.get("limit") || "50")
+  const status = searchParams.get("status") // "authorized" | "unauthorized" | "blacklisted" | null (all)
 
-    // Build query
-    const query: Record<string, unknown> = {}
-    if (status) {
-      query.status = status
-    }
+  let logs = getEntryLogs()
 
-    // Fetch logs
-    const logs = await EntryLog.find(query)
-      .sort({ entryTime: -1 })
-      .limit(limit)
-      .lean()
-
-    // Get summary
-    const summary = await EntryLog.getSummary()
-
-    // Transform logs to match expected format
-    const transformedLogs = logs.map((log) => ({
-      id: log._id.toString(),
-      vehicleNo: log.vehicleNo,
-      owner: log.owner,
-      type: log.type,
-      entryTime: new Date(log.entryTime).toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      assignedSlot: log.assignedSlot,
-      status: log.status,
-      confidence: log.confidence,
-      gate: log.gate,
-      isActive: log.isActive,
-    }))
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        entries: transformedLogs,
-        summary,
-        pagination: {
-          total: await EntryLog.countDocuments(query),
-          limit,
-          returned: transformedLogs.length,
-        },
-        lastUpdated: new Date().toISOString(),
-      },
-    })
-  } catch (error) {
-    console.error("[entry-logs] Error:", error)
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch entry logs" },
-      { status: 500 }
-    )
+  // Filter by status if provided
+  if (status) {
+    logs = logs.filter((log) => log.status === status)
   }
+
+  // Limit results
+  const limitedLogs = logs.slice(0, limit)
+
+  // Calculate summary stats
+  const allLogs = getEntryLogs()
+  const summary = {
+    total: allLogs.length,
+    authorized: allLogs.filter((l) => l.status === "authorized").length,
+    unauthorized: allLogs.filter((l) => l.status === "unauthorized").length,
+    blacklisted: allLogs.filter((l) => l.status === "blacklisted").length,
+  }
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      entries: limitedLogs,
+      summary,
+      pagination: {
+        total: logs.length,
+        limit,
+        returned: limitedLogs.length,
+      },
+      lastUpdated: new Date().toISOString(),
+    },
+  })
 }

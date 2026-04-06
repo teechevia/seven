@@ -17,6 +17,25 @@ if (!MONGODB_URI) {
 }
 
 /**
+ * Clean the MongoDB URI by removing unsupported options
+ * Some MongoDB connection strings include options that aren't supported by mongoose
+ */
+function cleanMongoDBUri(uri: string): string {
+  try {
+    const url = new URL(uri)
+    // Remove unsupported options
+    const unsupportedOptions = ['appname', 'appName']
+    unsupportedOptions.forEach(opt => {
+      url.searchParams.delete(opt)
+    })
+    return url.toString()
+  } catch {
+    // If URL parsing fails, return original
+    return uri
+  }
+}
+
+/**
  * Global is used here to maintain a cached connection across hot reloads
  * in development. This prevents connections growing exponentially
  * during API Route usage.
@@ -33,11 +52,12 @@ async function connectDB() {
   }
 
   if (!cached!.promise) {
-    const opts = {
+    const cleanedUri = cleanMongoDBUri(MONGODB_URI!)
+    const opts: mongoose.ConnectOptions = {
       bufferCommands: false,
     }
 
-    cached!.promise = mongoose.connect(MONGODB_URI!, opts).then((mongoose) => {
+    cached!.promise = mongoose.connect(cleanedUri, opts).then((mongoose) => {
       return mongoose
     })
   }

@@ -1,63 +1,53 @@
 import { NextResponse } from "next/server"
-import connectDB from "@/lib/mongodb"
-import ExitLog from "@/lib/models/ExitLog"
+import { getExitLogs } from "@/lib/fake-data"
 
 export async function GET(request: Request) {
-  try {
-    await connectDB()
+  // Simulate processing delay
+  await new Promise((resolve) => setTimeout(resolve, 50))
 
-    const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get("limit") || "50")
+  const { searchParams } = new URL(request.url)
+  const limit = parseInt(searchParams.get("limit") || "50")
 
-    // Fetch logs
-    const logs = await ExitLog.find()
-      .sort({ exitTime: -1 })
-      .limit(limit)
-      .lean()
+  const logs = getExitLogs()
+  const limitedLogs = logs.slice(0, limit)
 
-    // Get summary
-    const summary = await ExitLog.getSummary()
-
-    // Transform logs to match expected format
-    const transformedLogs = logs.map((log) => ({
-      id: log._id.toString(),
-      vehicleNo: log.vehicleNo,
-      owner: log.owner,
-      type: log.type,
-      entryTime: new Date(log.entryTime).toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      exitTime: new Date(log.exitTime).toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-      slot: log.slot,
-      duration: log.durationFormatted,
-      gate: log.gate,
-    }))
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        exits: transformedLogs,
-        summary: {
-          total: summary.total,
-          averageDuration: summary.averageDuration,
-        },
-        pagination: {
-          total: await ExitLog.countDocuments(),
-          limit,
-          returned: transformedLogs.length,
-        },
-        lastUpdated: new Date().toISOString(),
-      },
+  // Calculate average duration
+  const calculateAvgDuration = () => {
+    if (logs.length === 0) return "0m"
+    
+    let totalMinutes = 0
+    logs.forEach((log) => {
+      const match = log.duration.match(/(\d+)h?\s*(\d+)?m?/)
+      if (match) {
+        const hours = match[1] && log.duration.includes("h") ? parseInt(match[1]) : 0
+        const minutes = match[2] ? parseInt(match[2]) : (log.duration.includes("m") ? parseInt(match[1]) : 0)
+        totalMinutes += hours * 60 + minutes
+      }
     })
-  } catch (error) {
-    console.error("[exit-logs] Error:", error)
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch exit logs" },
-      { status: 500 }
-    )
+    
+    const avgMinutes = Math.round(totalMinutes / logs.length)
+    const hours = Math.floor(avgMinutes / 60)
+    const minutes = avgMinutes % 60
+    
+    if (hours === 0) return `${minutes}m`
+    if (minutes === 0) return `${hours}h`
+    return `${hours}h ${minutes}m`
   }
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      exits: limitedLogs,
+      summary: {
+        total: logs.length,
+        averageDuration: calculateAvgDuration(),
+      },
+      pagination: {
+        total: logs.length,
+        limit,
+        returned: limitedLogs.length,
+      },
+      lastUpdated: new Date().toISOString(),
+    },
+  })
 }
